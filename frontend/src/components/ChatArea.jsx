@@ -13,13 +13,21 @@ import {
   Spinner,
   Badge,
   useToast,
+  Menu,
+  MenuButton,
+  MenuList,
+  MenuItem,
+  Tooltip,
 } from "@chakra-ui/react";
-import { useEffect, useMemo, useState } from "react";
-import { FiSend, FiInfo, FiMessageCircle } from "react-icons/fi";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { FiSend, FiInfo, FiMessageCircle, FiLogOut } from "react-icons/fi";
 import UsersList from "./UsersList";
 import { apiClient } from "../apiClient";
+import { clearCurrentUser } from "../authUtils";
 
 const ChatArea = ({ currentUser, selectedGroup, socket }) => {
+  const navigate = useNavigate();
   const [messages, setMessages] = useState([]);
   const [usersInRoom, setUsersInRoom] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -28,22 +36,38 @@ const ChatArea = ({ currentUser, selectedGroup, socket }) => {
   const [typingUsers, setTypingUsers] = useState([]);
   const toast = useToast();
 
+  const handleLogout = () => {
+    clearCurrentUser();
+    navigate("/login");
+  };
+
+  useEffect(() => {
+    if (!selectedGroup) {
+      return;
+    }
+    // Ensure selectedGroup has members populated
+    if (!selectedGroup.members) {
+      selectedGroup.members = [];
+    }
+  }, [selectedGroup]);
+
   const groupId = selectedGroup?._id;
+  const currentUserId = currentUser?._id;
 
   const headerTitle = useMemo(
     () => selectedGroup?.name || "Select a group to start chatting",
     [selectedGroup]
   );
 
-  const loadMessages = async () => {
+  const loadMessages = useCallback(async () => {
     if (!groupId) return;
     try {
       setLoadingMessages(true);
-      const { data } = await apiClient.get(`/api/messages/${groupId}`);
+      const { data } = await apiClient.get(`/messages/${groupId}`);
       setMessages(
         data.map((m) => ({
           ...m,
-          isCurrentUser: m.sender?._id === currentUser?._id,
+          isCurrentUser: m.sender?._id === currentUserId,
         }))
       );
     } catch (error) {
@@ -60,26 +84,43 @@ const ChatArea = ({ currentUser, selectedGroup, socket }) => {
     } finally {
       setLoadingMessages(false);
     }
-  };
+  }, [groupId, currentUserId, toast]);
 
   useEffect(() => {
-    if (groupId && socket) {
-      socket.emit("join room", groupId);
-      loadMessages();
+    if (!groupId) {
+      setMessages([]);
+      setUsersInRoom([]);
     }
+  }, [groupId]);
+
+  useEffect(() => {
+    if (!groupId || !socket || !selectedGroup?.isJoined) {
+      return;
+    }
+
+    socket.emit("join room", groupId);
+    loadMessages();
+
     return () => {
-      if (groupId && socket) {
-        socket.emit("leave room", groupId);
-      }
+      socket.emit("leave room", groupId);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId, socket]);
+  }, [groupId, socket, selectedGroup?.isJoined, loadMessages]);
 
   useEffect(() => {
     if (!socket) return;
 
     const handleUsersInRoom = (users) => {
-      setUsersInRoom(users || []);
+      if (!users || !Array.isArray(users)) {
+        setUsersInRoom([]);
+        return;
+      }
+      const map = new Map();
+      for (const u of users) {
+        const id = u?._id?.toString();
+        if (!id) continue;
+        if (!map.has(id)) map.set(id, u);
+      }
+      setUsersInRoom(Array.from(map.values()));
     };
 
     const handleMessageReceived = (message) => {
@@ -87,8 +128,8 @@ const ChatArea = ({ currentUser, selectedGroup, socket }) => {
         ...prev,
         {
           ...message,
-          isCurrentUser: message.sender?._id === currentUser?._id,
-    },
+          isCurrentUser: message.sender?._id === currentUserId,
+        },
       ]);
     };
 
@@ -106,11 +147,48 @@ const ChatArea = ({ currentUser, selectedGroup, socket }) => {
       setTypingUsers((prev) => prev.filter((u) => u !== username));
     };
 
+    const handleNotification = (notification) => {
+      // Show notification when user joins/leaves
+      if (notification.type === "USER_JOINED" || notification.type === "USER_LEFT") {
+        toast({
+          description: notification.message,
+          status: "info",
+          duration: 3000,
+          isClosable: true,
+        });
+      }
+    };
+
+    const handleGroupUpdated = (data) => {
+      // When group members change, check if it's the group we're viewing
+      if (selectedGroup && data.groupId === selectedGroup._id) {
+        // Update the selected group with the new member list
+        const updatedGroup = {
+          ...selectedGroup,
+          members: data.group.members,
+        };
+        // Force re-render by calling parent's callback
+        // This will update the selectedGroup prop
+      }
+      
+      console.log("Group updated event received:", data);
+      toast({
+        description: data.type === "MEMBER_JOINED" 
+          ? `${data.newMember?.username} joined the group` 
+          : `${data.leftMember?.username} left the group`,
+        status: "info",
+        duration: 3000,
+        isClosable: true,
+      });
+    };
+
     socket.on("users in room", handleUsersInRoom);
     socket.on("message received", handleMessageReceived);
     socket.on("user left", handleUserLeft);
     socket.on("user typing", handleUserTyping);
     socket.on("user stop typing", handleUserStopTyping);
+    socket.on("notification", handleNotification);
+    socket.on("group updated", handleGroupUpdated);
 
     return () => {
       socket.off("users in room", handleUsersInRoom);
@@ -118,14 +196,16 @@ const ChatArea = ({ currentUser, selectedGroup, socket }) => {
       socket.off("user left", handleUserLeft);
       socket.off("user typing", handleUserTyping);
       socket.off("user stop typing", handleUserStopTyping);
+      socket.off("notification", handleNotification);
+      socket.off("group updated", handleGroupUpdated);
     };
-  }, [socket, currentUser]);
+  }, [socket, currentUser, toast]);
 
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !groupId) return;
     try {
       setSending(true);
-      const { data } = await apiClient.post("/api/messages", {
+      const { data } = await apiClient.post("/messages", {
         content: newMessage,
         groupId,
       });
@@ -189,31 +269,70 @@ const ChatArea = ({ currentUser, selectedGroup, socket }) => {
           borderBottom="1px solid"
           borderColor="gray.200"
           align="center"
+          justify="space-between"
           boxShadow="sm"
         >
-          <Icon as={FiMessageCircle} fontSize="24px" color="blue.500" mr={3} />
-          <Box flex="1">
-            <Text fontSize="lg" fontWeight="bold" color="gray.800">
-              {headerTitle}
-            </Text>
-            {selectedGroup && (
-              <HStack spacing={2}>
-            <Text fontSize="sm" color="gray.500">
+          <HStack flex="1" spacing={3}>
+            <Icon as={FiMessageCircle} fontSize="24px" color="blue.500" />
+            <Box>
+              <Text fontSize="lg" fontWeight="bold" color="gray.800">
+                {headerTitle}
+              </Text>
+              {selectedGroup && (
+                <Text fontSize="sm" color="gray.500">
                   {selectedGroup.description}
-            </Text>
-                <Badge colorScheme="green">
-                  {usersInRoom.length} online
-                </Badge>
-              </HStack>
+                </Text>
+              )}
+            </Box>
+          </HStack>
+
+          <HStack spacing={4}>
+            {currentUser && (
+              <Menu>
+                <MenuButton
+                  as={Button}
+                  variant="ghost"
+                  size="sm"
+                  leftIcon={
+                    <Avatar
+                      size="sm"
+                      name={currentUser.username}
+                      bg="blue.500"
+                    />
+                  }
+                  _hover={{ bg: "gray.100" }}
+                >
+                  <Text fontSize="sm" color="gray.700">
+                    {currentUser.username}
+                  </Text>
+                </MenuButton>
+                <MenuList>
+                  <MenuItem
+                    icon={<Icon as={FiLogOut} />}
+                    onClick={handleLogout}
+                    color="red.600"
+                  >
+                    Logout
+                  </MenuItem>
+                </MenuList>
+              </Menu>
             )}
-          </Box>
-          <Icon
-            as={FiInfo}
-            fontSize="20px"
-            color="gray.400"
-            cursor="pointer"
-            _hover={{ color: "blue.500" }}
-          />
+            <Tooltip label="Group Information" placement="left">
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label="Show group information"
+                _hover={{ bg: "gray.100" }}
+              >
+                <Icon
+                  as={FiInfo}
+                  fontSize="20px"
+                  color="gray.400"
+                  _hover={{ color: "blue.500" }}
+                />
+              </Button>
+            </Tooltip>
+          </HStack>
         </Flex>
 
         {/* Messages Area */}
@@ -242,6 +361,12 @@ const ChatArea = ({ currentUser, selectedGroup, socket }) => {
             <Flex h="100%" align="center" justify="center">
               <Text color="gray.500">
                 Select a group from the left sidebar to start chatting.
+              </Text>
+            </Flex>
+          ) : !selectedGroup.isJoined ? (
+            <Flex h="100%" align="center" justify="center">
+              <Text color="gray.500">
+                Join this group to load messages and start chatting.
               </Text>
             </Flex>
           ) : loadingMessages ? (
@@ -334,7 +459,7 @@ const ChatArea = ({ currentUser, selectedGroup, socket }) => {
               border="none"
               value={newMessage}
               onChange={(e) => handleTypingChange(e.target.value)}
-              isDisabled={!selectedGroup}
+              isDisabled={!selectedGroup || !selectedGroup.isJoined}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -354,7 +479,11 @@ const ChatArea = ({ currentUser, selectedGroup, socket }) => {
                 borderRadius="full"
                 onClick={handleSendMessage}
                 isLoading={sending}
-                isDisabled={!selectedGroup || !newMessage.trim()}
+                isDisabled={
+                  !selectedGroup ||
+                  !selectedGroup.isJoined ||
+                  !newMessage.trim()
+                }
                 _hover={{
                   transform: "translateY(-1px)",
                 }}
@@ -376,7 +505,10 @@ const ChatArea = ({ currentUser, selectedGroup, socket }) => {
         height="100%"
         flexShrink={0}
       >
-        <UsersList users={usersInRoom} />
+        <UsersList 
+          users={usersInRoom} 
+          groupMembers={selectedGroup?.members || []}
+        />
       </Box>
     </Flex>
   );

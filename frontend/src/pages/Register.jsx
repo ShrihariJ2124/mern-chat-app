@@ -34,7 +34,6 @@ const Register = () => {
     }
     try {
       setLoading(true);
-      // NOTE: baseURL already set to .../api so this becomes http://localhost:5000/api/users/register
       await apiClient.post("/users/register", {
         username,
         email,
@@ -82,6 +81,7 @@ const Register = () => {
         overflow="hidden"
         boxShadow="2xl"
       >
+        {/* Left Panel - Hidden on mobile */}
         <Box
           display={["none", "none", "flex"]}
           w="50%"
@@ -112,6 +112,7 @@ const Register = () => {
           </Box>
         </Box>
 
+        {/* Right Panel - Registration Form */}
         <Box
           w={["100%", "100%", "50%"]}
           bg="white"
@@ -120,6 +121,7 @@ const Register = () => {
           flexDirection="column"
           justifyContent="center"
         >
+          {/* Mobile Header - Shown only on mobile */}
           <Box display={["block", "block", "none"]} textAlign="center" mb={6}>
             <Text fontSize="2xl" fontWeight="bold" color="gray.800">
               Create Account
@@ -209,6 +211,7 @@ const Register = () => {
                   fontWeight: "500",
                   transition: "color 0.2s",
                 }}
+                _hover={{ color: "indigo.700" }}
               >
                 Sign in
               </Link>

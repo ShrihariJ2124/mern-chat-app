@@ -3,7 +3,8 @@ const Group = require("../models/GroupModel");
 const { protect, isAdmin } = require("../middleware/authMiddleware");
 const { trusted } = require("mongoose");
 
-const groupRouter = express.Router();
+const createGroupRouter = (io) => {
+  const groupRouter = express.Router();
 
 //Create a new group
 groupRouter.post("/", protect, isAdmin, async (req, res) => {
@@ -46,13 +47,31 @@ groupRouter.post("/:groupId/join", protect, async (req, res) => {
     if (!group) {
       return res.status(404).json({ message: "Group not found" });
     }
-    if (group.members.includes(req.user._id)) {
+    if (
+      group.members.some(
+        (m) => m?.toString() === req.user._id?.toString()
+      )
+    ) {
       return res.status(400).json({
         message: "Already a member of this group",
       });
     }
     group.members.push(req.user._id);
     await group.save();
+    
+    // Emit socket event to notify ALL clients about the membership change
+    const updatedGroup = await Group.findById(req.params.groupId)
+      .populate("admin", "username email")
+      .populate("members", "username email");
+    
+    // Broadcast to all users (not just those in the room)
+    io.emit("group updated", {
+      type: "MEMBER_JOINED",
+      group: updatedGroup,
+      newMember: req.user,
+      groupId: req.params.groupId,
+    });
+    
     res.json({ message: "Successfully joined this group" });
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -66,17 +85,38 @@ groupRouter.post("/:groupId/leave", protect, async (req, res) => {
     if (!group) {
       return res.status(404).json({ message: "Group not found" });
     }
-    if (!group.members.includes(req.user._id)) {
+    if (
+      !group.members.some(
+        (m) => m?.toString() === req.user._id?.toString()
+      )
+    ) {
       return res.status(400).json({ message: "Not a member of this group" });
     }
     group.members = group.members.filter((memberId) => {
       return memberId.toString() !== req.user._id.toString();
     });
     await group.save();
+    
+    // Emit socket event to notify ALL clients about the membership change
+    const updatedGroup = await Group.findById(req.params.groupId)
+      .populate("admin", "username email")
+      .populate("members", "username email");
+    
+    // Broadcast to all users (not just those in the room)
+    io.emit("group updated", {
+      type: "MEMBER_LEFT",
+      group: updatedGroup,
+      leftMember: req.user,
+      groupId: req.params.groupId,
+    });
+    
     res.json({ message: "Successfully left the group" });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
 });
 
-module.exports = groupRouter;
+  return groupRouter;
+};
+
+module.exports = createGroupRouter;

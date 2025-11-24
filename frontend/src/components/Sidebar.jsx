@@ -22,10 +22,11 @@ import {
 } from "@chakra-ui/react";
 import { useEffect, useMemo, useState } from "react";
 import { FiLogOut, FiPlus, FiUsers } from "react-icons/fi";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { apiClient } from "../apiClient";
+import { clearCurrentUser } from "../authUtils";
 
-const Sidebar = ({ currentUser, selectedGroup, onSelectGroup }) => {
+const Sidebar = ({ currentUser, selectedGroup, onSelectGroup, socket }) => {
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupDescription, setNewGroupDescription] = useState("");
@@ -37,18 +38,35 @@ const Sidebar = ({ currentUser, selectedGroup, onSelectGroup }) => {
 
   const isAdmin = useMemo(() => currentUser?.isAdmin, [currentUser]);
 
+  const syncSelectedGroup = (nextGroups) => {
+    if (!selectedGroup) {
+      return;
+    }
+    const updated = nextGroups.find((g) => g._id === selectedGroup._id);
+    if (updated) {
+      onSelectGroup(updated);
+    } else {
+      onSelectGroup(null);
+    }
+  };
+
   const fetchGroups = async () => {
     try {
       setLoading(true);
-      const { data } = await apiClient.get("/api/groups");
-      setGroups(
-        data.map((g) => ({
-          ...g,
-          isJoined: g.members?.some(
-            (m) => m._id?.toString() === currentUser?._id?.toString()
-          ),
-        }))
-      );
+      const { data } = await apiClient.get("/groups");
+      const formatted = data.map((g) => ({
+        ...g,
+        isJoined: g.members?.some(
+          (m) => m._id?.toString() === currentUser?._id?.toString()
+        ),
+      }));
+      setGroups(formatted);
+      syncSelectedGroup(formatted);
+      if (!selectedGroup && formatted.length) {
+        const preferred =
+          formatted.find((g) => g.isJoined) || formatted[0];
+        onSelectGroup(preferred);
+      }
     } catch (error) {
       toast({
         title: "Failed to load groups",
@@ -72,6 +90,30 @@ const Sidebar = ({ currentUser, selectedGroup, onSelectGroup }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser]);
 
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleGroupUpdated = (data) => {
+      // Refetch groups to update the member list in sidebar
+      fetchGroups();
+      
+      // If the updated group is the selected group, also update it immediately
+      if (selectedGroup && data.groupId === selectedGroup._id) {
+        const updatedGroup = {
+          ...selectedGroup,
+          members: data.group.members,
+        };
+        onSelectGroup(updatedGroup);
+      }
+    };
+
+    socket.on("group updated", handleGroupUpdated);
+
+    return () => {
+      socket.off("group updated", handleGroupUpdated);
+    };
+  }, [socket, selectedGroup, onSelectGroup]);
+
   const handleCreateGroup = async () => {
     if (!newGroupName || !newGroupDescription) {
       toast({
@@ -85,18 +127,20 @@ const Sidebar = ({ currentUser, selectedGroup, onSelectGroup }) => {
     }
     try {
       setCreating(true);
-      const { data } = await apiClient.post("/api/groups", {
+      const { data } = await apiClient.post("/groups", {
         name: newGroupName,
         description: newGroupDescription,
       });
       const created = data.populatedGroup || data;
-      setGroups((prev) => [
-        ...prev,
-        {
-          ...created,
-      isJoined: true,
-    },
-      ]);
+      const createdWithMembership = {
+        ...created,
+        isJoined: true,
+      };
+      setGroups((prev) => {
+        const next = [...prev, createdWithMembership];
+        return next;
+      });
+      onSelectGroup(createdWithMembership);
       toast({
         title: "Group created successfully",
         status: "success",
@@ -126,23 +170,25 @@ const Sidebar = ({ currentUser, selectedGroup, onSelectGroup }) => {
     const groupId = group._id;
     try {
       if (group.isJoined) {
-        await apiClient.post(`/api/groups/${groupId}/leave`);
-        setGroups((prev) =>
-          prev.map((g) =>
-            g._id === groupId ? { ...g, isJoined: false } : g
-          )
-        );
-        if (selectedGroup?._id === groupId) {
-          onSelectGroup(null);
-        }
+        await apiClient.post(`/groups/${groupId}/leave`);
       } else {
-        await apiClient.post(`/api/groups/${groupId}/join`);
-        setGroups((prev) =>
-          prev.map((g) =>
-            g._id === groupId ? { ...g, isJoined: true } : g
-          )
-        );
+        await apiClient.post(`/groups/${groupId}/join`);
       }
+      
+      // Refetch groups to sync state
+      await fetchGroups();
+      
+      // Emit socket event to notify other users in the group about membership change
+      if (socket && socket.connected) {
+        socket.emit("join room", groupId);
+      }
+      
+      toast({
+        title: group.isJoined ? "Left group" : "Joined group",
+        status: "success",
+        duration: 2000,
+        isClosable: true,
+      });
     } catch (error) {
       toast({
         title: "Action failed",
@@ -158,7 +204,7 @@ const Sidebar = ({ currentUser, selectedGroup, onSelectGroup }) => {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("chatUser");
+    clearCurrentUser();
     navigate("/login");
   };
 
@@ -251,7 +297,7 @@ const Sidebar = ({ currentUser, selectedGroup, onSelectGroup }) => {
                     {group.description}
                   </Text>
                 </Box>
-                <Button
+                  <Button
                   size="sm"
                   colorScheme={group.isJoined ? "red" : "blue"}
                   variant={group.isJoined ? "ghost" : "solid"}

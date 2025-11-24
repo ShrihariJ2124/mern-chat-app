@@ -4,59 +4,50 @@ const cors = require("cors");
 const mongoose = require("mongoose");
 const http = require("http");
 const socketio = require("socket.io");
-
 const userRouter = require("./routes/userRoutes");
+const socketIo = require("./socket");
 const groupRouter = require("./routes/groupRoutes");
 const messageRouter = require("./routes/messageRoutes");
-const socketIo = require("./socket");
-
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-
 const io = socketio(server, {
   cors: {
-    origin: ["http://localhost:5173", "http://localhost:5174"],
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    origin: ["http://localhost:5173", "https://masync-chat-app.netlify.app"],
+    methods: ["GET", "POST"],
+    credentials: true,
   },
 });
-
-// MIDDLEWARES
+//middlewares
 app.use(
   cors({
-    origin: ["http://localhost:5173", "http://localhost:5174"],
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    origin: ["http://localhost:5173", "https://masync-chat-app.netlify.app"],
+    credentials: true,
   })
 );
-
 app.use(express.json());
-
-// CONNECT DATABASE
+//connect to db
 mongoose
   .connect(process.env.MONGO_URL)
   .then(() => console.log("Connected to DB"))
-  .catch((err) => console.log("DB Connection Failed:", err));
+  .catch((err) => console.log("Mongodb connected failed", err));
 
-// SOCKET.IO INIT
+//Initialize
 socketIo(io);
-
-// ROUTES
+//our routes
+app.get("/", (req, res) => {
+  res.json({
+    project: "MERN Chat App using Socket.IO",
+    message: "Welcome to MERN Chat Application",
+    developedBy: "MasynTech",
+    website: "www.masynctech.com",
+  });
+});
 app.use("/api/users", userRouter);
-app.use("/api/groups", groupRouter);
+app.use("/api/groups", groupRouter(io));
 app.use("/api/messages", messageRouter);
 
-// DEFAULT ROUTE
-app.get("/", (req, res) => {
-  res.json({ message: "API Working locally" });
-});
-
-// ERROR HANDLER
-app.use((err, req, res, next) => {
-  console.error("SERVER ERROR:", err);
-  res.status(500).json({ message: err.message });
-});
-
-// START SERVER
+//start the server
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => console.log("Server running on port", PORT));
+server.listen(PORT, console.log("Server is up and running on port", PORT));

@@ -12,6 +12,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { FiLogIn } from "react-icons/fi";
 import { useState } from "react";
 import { apiClient } from "../apiClient";
+import { setCurrentUser } from "../authUtils";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -43,7 +44,7 @@ const Login = () => {
 
       // Backend returns user data directly, so check for _id
       if (data?._id) {
-        localStorage.setItem("chatUser", JSON.stringify(data));
+        setCurrentUser(data);
 
         toast({
           title: "Login successful",

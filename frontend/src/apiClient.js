@@ -1,21 +1,32 @@
 import axios from "axios";
+import { getCurrentUser } from "./authUtils";
 
+const normalizeBaseUrl = (url) => {
+  if (!url) return "http://localhost:5000";
+  return url.endsWith("/") ? url.slice(0, -1) : url;
+};
+
+// Root address of the backend server (e.g. http://localhost:5000)
+const API_ROOT = normalizeBaseUrl(import.meta.env.VITE_API_URL);
+
+// REST API base (server exposes routes under /api/*)
 export const apiClient = axios.create({
-  baseURL: "http://localhost:5000/api",  // IMPORTANT!
+  baseURL: `${API_ROOT}/api`,
+  withCredentials: true,
 });
 
-// Add auth token if available
+// Attach auth token automatically when available
 apiClient.interceptors.request.use((config) => {
-  const storedUser = localStorage.getItem("chatUser");
-  if (storedUser) {
-    try {
-      const parsed = JSON.parse(storedUser);
-      if (parsed?.token) {
-        config.headers.Authorization = `Bearer ${parsed.token}`;
-      }
-    } catch {}
+  const user = getCurrentUser();
+  if (user?.token) {
+    config.headers.Authorization = `Bearer ${user.token}`;
   }
   return config;
 });
 
-export const getSocketUrl = () => "http://localhost:5000";
+// Socket URL should point to the server root (no /api prefix)
+export const getSocketUrl = () => import.meta.env.VITE_SOCKET_URL || API_ROOT;
+
+
+
+
