@@ -4,6 +4,55 @@ const jwt = require("jsonwebtoken");
 
 const userRouter = express.Router();
 
+userRouter.post("/setup-admin", async (req, res) => {
+  try {
+    const setupKey = req.headers["x-admin-setup-key"];
+
+    if (!process.env.ADMIN_SETUP_KEY) {
+      return res
+        .status(403)
+        .json({ message: "Admin setup route is disabled" });
+    }
+
+    if (setupKey !== process.env.ADMIN_SETUP_KEY) {
+      return res.status(401).json({ message: "Invalid setup key" });
+    }
+
+    const adminData = {
+      username: "Admin",
+      email: "admin@gmail.com",
+      password: "4321",
+      isAdmin: true,
+    };
+
+    let adminUser = await User.findOne({ email: adminData.email });
+
+    if (!adminUser) {
+      adminUser = await User.create(adminData);
+
+      return res.status(201).json({
+        message: "Admin user created successfully",
+        email: adminUser.email,
+        isAdmin: adminUser.isAdmin,
+      });
+    }
+
+    adminUser.username = adminData.username;
+    adminUser.password = adminData.password;
+    adminUser.isAdmin = true;
+    await adminUser.save();
+
+    return res.json({
+      message: "Admin user updated successfully",
+      email: adminUser.email,
+      isAdmin: adminUser.isAdmin,
+    });
+  } catch (error) {
+    console.log("Admin setup failed:", error);
+    return res.status(500).json({ message: error.message });
+  }
+});
+
 userRouter.post("/register", async (req, res) => {
   try {
     const { username, email, password } = req.body;
