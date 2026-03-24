@@ -3,7 +3,6 @@ const dotenv = require("dotenv");
 const cors = require("cors");
 const mongoose = require("mongoose");
 const http = require("http");
-const socketio = require("socket.io");
 const userRouter = require("./routes/userRoutes");
 const socketIo = require("./socket");
 const groupRouter = require("./routes/groupRoutes");
@@ -12,9 +11,13 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const io = socketio(server, {
+const allowedOrigins = [
+  "http://localhost:5173",
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+const io = require("socket.io")(server, {
   cors: {
-    origin: ["http://localhost:5173", "https://masync-chat-app.netlify.app"],
+    origin: allowedOrigins,
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -22,7 +25,7 @@ const io = socketio(server, {
 //middlewares
 app.use(
   cors({
-    origin: ["http://localhost:5173", "https://masync-chat-app.netlify.app"],
+    origin: allowedOrigins,
     credentials: true,
   })
 );
