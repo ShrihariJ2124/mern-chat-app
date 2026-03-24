@@ -29,9 +29,9 @@ app.use(
 app.use(express.json());
 //connect to db
 mongoose
-  .connect(process.env.MONGO_URL)
-  .then(() => console.log("Connected to DB"))
-  .catch((err) => console.log("Mongodb connected failed", err));
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB Connected ✅"))
+  .catch((err) => console.log(err));
 
 //Initialize
 socketIo(io);
