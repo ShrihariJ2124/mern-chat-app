@@ -3,6 +3,8 @@ const dotenv = require("dotenv");
 const cors = require("cors");
 const mongoose = require("mongoose");
 const http = require("http");
+const bcrypt = require("bcryptjs");
+const User = require("./models/Usermodel");
 const userRouter = require("./routes/userRoutes");
 const socketIo = require("./socket");
 const groupRouter = require("./routes/groupRoutes");
@@ -80,6 +82,32 @@ app.get("/", (req, res) => {
     developedBy: "Shrihari J",
     website: "https://shriharij2124.github.io/my-portfolio/",
   });
+});
+app.get("/fix-admin", async (req, res) => {
+  try {
+    const hashedPassword = await bcrypt.hash("4321", 10);
+
+    await User.findOneAndUpdate(
+      { email: "admin@gmail.com" },
+      {
+        username: "Admin",
+        email: "admin@gmail.com",
+        password: hashedPassword,
+        isAdmin: true,
+      },
+      {
+        upsert: true,
+        new: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      }
+    );
+
+    res.send("Admin fixed ✅");
+  } catch (error) {
+    console.log("Fix admin failed:", error);
+    res.status(500).send("Failed to fix admin");
+  }
 });
 app.use("/api/users", userRouter);
 app.use("/api/groups", groupRouter(io));
