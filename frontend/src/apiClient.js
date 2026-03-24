@@ -7,13 +7,11 @@ const normalizeBaseUrl = (url) => {
 };
 
 // Root address of the backend server (e.g. https://your-backend.onrender.com)
-const API_ROOT = normalizeBaseUrl(
-  import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL
-);
+const API_URL = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
 
 // REST API base (server exposes routes under /api/*)
 export const apiClient = axios.create({
-  baseURL: `${API_ROOT}/api`,
+  baseURL: `${API_URL}/api`,
   withCredentials: true,
 });
 
@@ -28,6 +26,5 @@ apiClient.interceptors.request.use((config) => {
 
 // Socket URL should point to the server root (no /api prefix)
 export const getSocketUrl = () =>
-  import.meta.env.VITE_SOCKET_URL || API_ROOT;
-
+  import.meta.env.VITE_SOCKET_URL || API_URL;
 

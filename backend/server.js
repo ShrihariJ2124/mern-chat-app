@@ -11,25 +11,58 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
+const normalizeOrigin = (origin) =>
+  origin ? origin.replace(/\/$/, "") : origin;
+
 const allowedOrigins = [
   "http://localhost:5173",
   process.env.FRONTEND_URL,
-].filter(Boolean);
+]
+  .filter(Boolean)
+  .map(normalizeOrigin);
+
+const isAllowedOrigin = (origin) =>
+  allowedOrigins.includes(normalizeOrigin(origin));
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || isAllowedOrigin(origin)) {
+      return callback(null, true);
+    }
+
+    console.error(`Blocked by CORS: ${origin}`);
+    return callback(new Error("Not allowed by CORS"));
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+};
+
 const io = require("socket.io")(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin || isAllowedOrigin(origin)) {
+        return callback(null, true);
+      }
+
+      console.error(`Blocked Socket.IO origin: ${origin}`);
+      return callback(new Error("Not allowed by CORS"));
+    },
     methods: ["GET", "POST"],
     credentials: true,
   },
 });
 //middlewares
-app.use(
-  cors({
-    origin: allowedOrigins,
-    credentials: true,
-  })
-);
+app.use((req, res, next) => {
+  console.log(
+    `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} origin=${req.headers.origin || "none"}`
+  );
+  next();
+});
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 //connect to db
 mongoose
   .connect(process.env.MONGO_URI)
