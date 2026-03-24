@@ -16,6 +16,7 @@ const normalizeOrigin = (origin) =>
 
 const allowedOrigins = [
   "http://localhost:5173",
+  "https://mern-chat-app-smoky.vercel.app",
   process.env.FRONTEND_URL,
 ]
   .filter(Boolean)
@@ -48,7 +49,7 @@ const io = require("socket.io")(server, {
       console.error(`Blocked Socket.IO origin: ${origin}`);
       return callback(new Error("Not allowed by CORS"));
     },
-    methods: ["GET", "POST"],
+    methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   },
 });
