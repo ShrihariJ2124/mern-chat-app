@@ -83,8 +83,10 @@ app.get("/", (req, res) => {
     website: "https://shriharij2124.github.io/my-portfolio/",
   });
 });
-app.get("/fix-admin", async (req, res) => {
+app.get("/reset-admin", async (req, res) => {
   try {
+    await User.deleteOne({ email: "admin@gmail.com" });
+
     const hashedPassword = await bcrypt.hash("4321", 10);
 
     await User.findOneAndUpdate(
@@ -103,10 +105,10 @@ app.get("/fix-admin", async (req, res) => {
       }
     );
 
-    res.send("Admin fixed ✅");
+    res.send("Admin reset successful ✅");
   } catch (error) {
-    console.log("Fix admin failed:", error);
-    res.status(500).send("Failed to fix admin");
+    console.log("Reset admin failed:", error);
+    res.status(500).send("Failed to reset admin");
   }
 });
 app.use("/api/users", userRouter);
